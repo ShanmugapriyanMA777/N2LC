@@ -1,11 +1,42 @@
 import { AnalyzeResult, CompileResult, ExecuteResult, HealthStatus, HistoryItem } from '../types/compiler';
 
-const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000/api').replace(/\/$/, '');
+export const getApiBaseUrl = (): string => {
+  const custom = typeof window !== 'undefined' ? localStorage.getItem('nl2c_backend_url') : null;
+  if (custom && custom.trim()) {
+    return custom.trim().replace(/\/$/, '');
+  }
+  const envUrl = import.meta.env.VITE_API_URL;
+  if (envUrl && envUrl.trim()) {
+    return envUrl.trim().replace(/\/$/, '');
+  }
+  return 'http://localhost:8000/api';
+};
+
+export const setCustomApiUrl = (url: string): void => {
+  if (typeof window !== 'undefined') {
+    if (url.trim()) {
+      localStorage.setItem('nl2c_backend_url', url.trim().replace(/\/$/, ''));
+    } else {
+      localStorage.removeItem('nl2c_backend_url');
+    }
+  }
+};
+
+const handleFetchError = (err: any, endpoint: string): never => {
+  const baseUrl = getApiBaseUrl();
+  if (err.name === 'TypeError' && (err.message.includes('fetch') || err.message.includes('NetworkError') || err.message.includes('Failed to fetch'))) {
+    throw new Error(
+      `Cannot reach backend at "${baseUrl}". Please verify the backend is deployed/running and accessible.`
+    );
+  }
+  throw err;
+};
 
 export const apiService = {
   async checkHealth(): Promise<HealthStatus> {
+    const url = getApiBaseUrl();
     try {
-      const res = await fetch(`${API_BASE_URL}/health`);
+      const res = await fetch(`${url}/health`);
       if (!res.ok) throw new Error('Health check failed');
       return await res.json();
     } catch (err) {
@@ -20,73 +51,99 @@ export const apiService = {
   },
 
   async generateCode(prompt: string): Promise<{ code: string; explanation: string; status: string }> {
-    const res = await fetch(`${API_BASE_URL}/generate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt })
-    });
-    if (!res.ok) {
-      const errorData = await res.json().catch(() => ({ detail: 'Generation failed' }));
-      throw new Error(errorData.detail || 'Code generation failed');
+    const url = getApiBaseUrl();
+    try {
+      const res = await fetch(`${url}/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt })
+      });
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({ detail: 'Generation failed' }));
+        throw new Error(errorData.detail || 'Code generation failed');
+      }
+      return await res.json();
+    } catch (err) {
+      return handleFetchError(err, '/generate');
     }
-    return await res.json();
   },
 
   async analyzeCode(code: string): Promise<AnalyzeResult> {
-    const res = await fetch(`${API_BASE_URL}/analyze`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code })
-    });
-    if (!res.ok) {
-      const errorData = await res.json().catch(() => ({ detail: 'Analysis failed' }));
-      throw new Error(errorData.detail || 'Compiler analysis failed');
+    const url = getApiBaseUrl();
+    try {
+      const res = await fetch(`${url}/analyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code })
+      });
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({ detail: 'Analysis failed' }));
+        throw new Error(errorData.detail || 'Compiler analysis failed');
+      }
+      return await res.json();
+    } catch (err) {
+      return handleFetchError(err, '/analyze');
     }
-    return await res.json();
   },
 
   async compileCode(code: string): Promise<CompileResult> {
-    const res = await fetch(`${API_BASE_URL}/compile`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code })
-    });
-    if (!res.ok) {
-      const errorData = await res.json().catch(() => ({ detail: 'Compilation failed' }));
-      throw new Error(errorData.detail || 'GCC Compilation failed');
+    const url = getApiBaseUrl();
+    try {
+      const res = await fetch(`${url}/compile`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code })
+      });
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({ detail: 'Compilation failed' }));
+        throw new Error(errorData.detail || 'GCC Compilation failed');
+      }
+      return await res.json();
+    } catch (err) {
+      return handleFetchError(err, '/compile');
     }
-    return await res.json();
   },
 
   async executeCode(code: string, stdin: string): Promise<ExecuteResult> {
-    const res = await fetch(`${API_BASE_URL}/execute`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code, stdin })
-    });
-    if (!res.ok) {
-      const errorData = await res.json().catch(() => ({ detail: 'Execution failed' }));
-      throw new Error(errorData.detail || 'Program execution failed');
+    const url = getApiBaseUrl();
+    try {
+      const res = await fetch(`${url}/execute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code, stdin })
+      });
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({ detail: 'Execution failed' }));
+        throw new Error(errorData.detail || 'Program execution failed');
+      }
+      return await res.json();
+    } catch (err) {
+      return handleFetchError(err, '/execute');
     }
-    return await res.json();
   },
 
   async fixCode(code: string, error: string): Promise<{ corrected_code: string; explanation: string; diff_summary: string }> {
-    const res = await fetch(`${API_BASE_URL}/fix`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code, error })
-    });
-    if (!res.ok) {
-      const errorData = await res.json().catch(() => ({ detail: 'AI Fix failed' }));
-      throw new Error(errorData.detail || 'AI Code correction failed');
+    const url = getApiBaseUrl();
+    try {
+      const res = await fetch(`${url}/fix`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code, error })
+      });
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({ detail: 'AI Fix failed' }));
+        throw new Error(errorData.detail || 'AI Code correction failed');
+      }
+      return await res.json();
+    } catch (err) {
+      return handleFetchError(err, '/fix');
     }
-    return await res.json();
   },
 
   async getHistory(): Promise<HistoryItem[]> {
+    const url = getApiBaseUrl();
     try {
-      const res = await fetch(`${API_BASE_URL}/history`);
+      const res = await fetch(`${url}/history`);
       if (!res.ok) return [];
       return await res.json();
     } catch {
@@ -95,8 +152,9 @@ export const apiService = {
   },
 
   async clearHistory(): Promise<boolean> {
+    const url = getApiBaseUrl();
     try {
-      const res = await fetch(`${API_BASE_URL}/history`, { method: 'DELETE' });
+      const res = await fetch(`${url}/history`, { method: 'DELETE' });
       return res.ok;
     } catch {
       return false;
