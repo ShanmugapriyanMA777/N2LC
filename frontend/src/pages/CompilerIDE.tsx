@@ -8,6 +8,7 @@ import { SemanticReport } from '../components/SemanticReport';
 import { SymbolTableViewer } from '../components/SymbolTableViewer';
 import { CompilationViewer } from '../components/CompilationViewer';
 import { OutputConsole } from '../components/OutputConsole';
+import { InteractiveTerminal } from '../components/InteractiveTerminal';
 import { AIDiffViewer } from '../components/AIDiffViewer';
 import { LogsViewer, LogEntry } from '../components/LogsViewer';
 import { ASTViewer } from '../components/ASTViewer';
@@ -47,7 +48,7 @@ export const CompilerIDE: React.FC = () => {
   const [prompt, setPrompt] = useState('Write a C program to calculate factorial of a number.');
   const [code, setCode] = useState(DEFAULT_STARTER_CODE);
   const [stdin, setStdin] = useState('5');
-  const [activeBottomTab, setActiveBottomTab] = useState<string>('tokens');
+  const [activeBottomTab, setActiveBottomTab] = useState<string>('cli');
 
   const [analysis, setAnalysis] = useState<AnalyzeResult | null>(null);
   const [compileRes, setCompileRes] = useState<CompileResult | null>(null);
@@ -88,7 +89,7 @@ export const CompilerIDE: React.FC = () => {
     setIsGenerating(true);
     addLog('INFO', 'Request received');
     addLog('INFO', `Processing requirement: "${prompt.trim()}"`);
-    addLog('INFO', 'Sending request to Gemini');
+    addLog('INFO', 'Sending request to AI provider...');
 
     try {
       const res = await apiService.generateCode(prompt);
@@ -177,22 +178,22 @@ export const CompilerIDE: React.FC = () => {
       if (runRes.success) {
         addLog('SUCCESS', `Execution completed with return code ${runRes.exit_code} (${runRes.execution_time}s)`);
         addLog('SUCCESS', 'Pipeline completed successfully');
-        setActiveBottomTab('output');
+        setActiveBottomTab('cli');
       } else {
         addLog('ERROR', `Runtime error / timeout: ${runRes.stderr}`);
-        setActiveBottomTab('output');
+        setActiveBottomTab('cli');
       }
     } catch (err: any) {
       addLog('ERROR', `Pipeline error: ${err.message}`);
       setErrorMessage(err.message);
-      setActiveBottomTab('aifix');
+      setActiveBottomTab('cli');
     } finally {
       setIsCompiling(false);
       setIsExecuting(false);
     }
   };
 
-  // 4. Request AI Fix - Now AUTOMATICALLY applies the fix, re-analyzes and recompiles!
+  // 4. Request AI Fix
   const handleRequestFix = async () => {
     if (!code.trim()) return;
     setIsFixing(true);
@@ -211,20 +212,18 @@ export const CompilerIDE: React.FC = () => {
 
       if (fixRes.corrected_code && fixRes.corrected_code.trim()) {
         const newCode = fixRes.corrected_code;
-        // Automatically apply the fix to the Monaco code editor!
         setCode(newCode);
         setErrorMessage('');
         addLog('SUCCESS', 'Automatically applied AI-corrected code to program.c!');
         addLog('INFO', 'Auto-triggering re-analysis and recompilation...');
 
-        // Automatically re-analyze the repaired code
+        // Re-analyze
         setIsAnalyzing(true);
         const anaRes = await apiService.analyzeCode(newCode);
         setAnalysis(anaRes);
         setIsAnalyzing(false);
-        addLog('SUCCESS', `Analysis finished: ${anaRes.tokens.length} tokens, Syntax: ${anaRes.syntax.valid ? 'PASSED' : 'FAILED'}, Semantic: ${anaRes.semantic.valid ? 'PASSED' : 'FAILED'}`);
 
-        // Automatically re-compile with GCC & execute
+        // Re-compile
         setIsCompiling(true);
         setIsExecuting(true);
         const compRes = await apiService.compileCode(newCode);
@@ -237,7 +236,7 @@ export const CompilerIDE: React.FC = () => {
           setExecRes(runRes);
           setIsExecuting(false);
           addLog('SUCCESS', `Execution completed with exit code ${runRes.exit_code}`);
-          setActiveBottomTab('output');
+          setActiveBottomTab('cli');
         } else {
           setIsExecuting(false);
           addLog('WARN', 'Recompilation reported remaining compiler diagnostics.');
@@ -278,7 +277,7 @@ export const CompilerIDE: React.FC = () => {
         addLog('SUCCESS', 'Recompilation PASSED! Executing corrected program...');
         const runRes = await apiService.executeCode(newCode, stdin);
         setExecRes(runRes);
-        setActiveBottomTab('output');
+        setActiveBottomTab('cli');
       } else {
         addLog('WARN', 'Recompilation reported remaining compiler diagnostics.');
         setActiveBottomTab('compilation');
@@ -301,6 +300,8 @@ export const CompilerIDE: React.FC = () => {
   };
 
   const bottomTabs = [
+    { id: 'cli', label: 'CLI Terminal', icon: Terminal, badge: 'Interactive' },
+    { id: 'output', label: 'Program Output', icon: Terminal, badge: execRes?.success ? 'Success' : null },
     { id: 'tokens', label: 'Tokens', icon: Layers, count: analysis?.tokens.length },
     {
       id: 'syntax',
@@ -321,7 +322,6 @@ export const CompilerIDE: React.FC = () => {
       icon: Cpu,
       badge: compileRes ? (compileRes.success ? 'Build OK' : 'Failed') : null
     },
-    { id: 'output', label: 'Output', icon: Terminal, badge: execRes?.success ? 'Success' : null },
     {
       id: 'aifix',
       label: 'AI Correction',
@@ -388,8 +388,8 @@ export const CompilerIDE: React.FC = () => {
         </div>
       </div>
 
-      {/* BOTTOM PANEL: Inspector Tabs */}
-      <div className="glass-panel rounded-2xl border border-[#e8d8be] shadow-sm flex flex-col h-[400px] overflow-hidden bg-white">
+      {/* BOTTOM PANEL: Inspector & CLI Terminal Tabs */}
+      <div className="glass-panel rounded-2xl border border-[#e8d8be] shadow-sm flex flex-col h-[420px] overflow-hidden bg-white">
         {/* Tab Headers */}
         <div className="flex items-center gap-1.5 px-3 py-2 bg-[#faf6ee] border-b border-[#ebdcc5] overflow-x-auto">
           {bottomTabs.map((tab) => {
@@ -415,7 +415,9 @@ export const CompilerIDE: React.FC = () => {
                 {tab.badge && (
                   <span
                     className={`px-1.5 py-0.2 rounded text-[10px] font-bold border ${
-                      tab.badge === 'Valid' || tab.badge === 'Success' || tab.badge === 'Build OK'
+                      tab.badge === 'Interactive'
+                        ? 'bg-amber-100 text-amber-900 border-amber-400 font-extrabold'
+                        : tab.badge === 'Valid' || tab.badge === 'Success' || tab.badge === 'Build OK'
                         ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
                         : 'bg-rose-50 text-rose-800 border-rose-300 animate-pulse'
                     }`}
@@ -430,14 +432,25 @@ export const CompilerIDE: React.FC = () => {
 
         {/* Tab Content Panels */}
         <div className="flex-1 overflow-hidden bg-[#fdfbf7]">
-          {activeBottomTab === 'tokens' && <TokenTable tokens={analysis?.tokens || []} />}
-          {activeBottomTab === 'syntax' && <SyntaxReport syntax={analysis?.syntax || null} />}
-          {activeBottomTab === 'semantic' && (
-            <SemanticReport syntax={analysis?.syntax || null} semantic={analysis?.semantic || null} />
-          )}
-          {activeBottomTab === 'symbols' && <SymbolTableViewer symbols={analysis?.symbols || []} />}
-          {activeBottomTab === 'compilation' && (
-            <CompilationViewer compileRes={compileRes} isCompiling={isCompiling} />
+          {activeBottomTab === 'cli' && (
+            <InteractiveTerminal
+              code={code}
+              setCode={setCode}
+              prompt={prompt}
+              setPrompt={setPrompt}
+              analysis={analysis}
+              compileRes={compileRes}
+              execRes={execRes}
+              stdin={stdin}
+              setStdin={setStdin}
+              onCompileAndRun={handleCompileAndRun}
+              onAnalyze={handleAnalyze}
+              onFix={handleRequestFix}
+              onGenerate={handleGenerate}
+              isCompiling={isCompiling}
+              isExecuting={isExecuting}
+              isGenerating={isGenerating}
+            />
           )}
           {activeBottomTab === 'output' && (
             <OutputConsole
@@ -452,6 +465,15 @@ export const CompilerIDE: React.FC = () => {
                 setExecRes(null);
               }}
             />
+          )}
+          {activeBottomTab === 'tokens' && <TokenTable tokens={analysis?.tokens || []} />}
+          {activeBottomTab === 'syntax' && <SyntaxReport syntax={analysis?.syntax || null} />}
+          {activeBottomTab === 'semantic' && (
+            <SemanticReport syntax={analysis?.syntax || null} semantic={analysis?.semantic || null} />
+          )}
+          {activeBottomTab === 'symbols' && <SymbolTableViewer symbols={analysis?.symbols || []} />}
+          {activeBottomTab === 'compilation' && (
+            <CompilationViewer compileRes={compileRes} isCompiling={isCompiling} />
           )}
           {activeBottomTab === 'aifix' && (
             <AIDiffViewer
@@ -478,3 +500,5 @@ export const CompilerIDE: React.FC = () => {
     </div>
   );
 };
+
+export default CompilerIDE;
