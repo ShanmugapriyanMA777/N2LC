@@ -9,6 +9,10 @@ export const getApiBaseUrl = (): string => {
   if (envUrl && envUrl.trim()) {
     return envUrl.trim().replace(/\/$/, '');
   }
+  // If running on a live domain (like Vercel), use the live Render backend by default
+  if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+    return 'https://nl2c-backend.onrender.com/api';
+  }
   return 'http://localhost:8000/api';
 };
 
